@@ -28,6 +28,8 @@
 #include "libgambit/libgambit.h"
 #include "funcmin.h"
 
+using namespace Gambit;
+
 extern int m_stopAfter;
 extern int m_numTries;
 extern int m_maxits1;
@@ -39,38 +41,28 @@ extern bool useRandom;
 extern int g_numDecimals;
 extern bool verbose;
 
-class EFLiapFunc : public Function  {
+class AgentLyapunovFunction : public Function  {
 private:
-  mutable long _nevals;
-  Gambit::Game _efg;
-  mutable Gambit::MixedBehavProfile<double> _p;
+  Game m_game;
+  mutable MixedBehavProfile<double> m_profile;
 
-  double Value(const Gambit::Vector<double> &x) const;
-  bool Gradient(const Gambit::Vector<double> &, Gambit::Vector<double> &) const;
+  double Value(const Vector<double> &x) const;
+  bool Gradient(const Vector<double> &, Vector<double> &) const;
 
 public:
-  EFLiapFunc(Gambit::Game, const Gambit::MixedBehavProfile<double> &);
-  virtual ~EFLiapFunc();
-    
-  long NumEvals(void) const  { return _nevals; }
+  AgentLyapunovFunction(const MixedBehavProfile<double> &);
+  virtual ~AgentLyapunovFunction() { }
 };
 
 
-EFLiapFunc::EFLiapFunc(Gambit::Game E,
-		       const Gambit::MixedBehavProfile<double> &start)
-  : _nevals(0L), _efg(E), _p(start)
+AgentLyapunovFunction::AgentLyapunovFunction(const MixedBehavProfile<double> &p_start)
+  : m_game(p_start.GetGame()), m_profile(p_start)
 { }
 
-EFLiapFunc::~EFLiapFunc()
-{ }
-
-
-double EFLiapFunc::Value(const Gambit::Vector<double> &v) const
+double AgentLyapunovFunction::Value(const Vector<double> &v) const
 {
-  _nevals++;
-  ((Gambit::Vector<double> &) _p).operator=(v);
-    //_p = v;
-  return _p.GetLiapValue();
+  static_cast<Vector<double> &>(m_profile).operator=(v);
+  return m_profile.GetLiapValue();
 }
 
 //
@@ -79,7 +71,7 @@ double EFLiapFunc::Value(const Gambit::Vector<double> &v) const
 // vector perpendicular to the plane, then subtracting to compute the
 // component parallel to the plane.)
 //
-static void Project(Gambit::Vector<double> &x, const Gambit::Array<int> &lengths)
+static void Project(Vector<double> &x, const Array<int> &lengths)
 {
   int index = 1;
   for (int part = 1; part <= lengths.Length(); part++)  {
@@ -96,29 +88,26 @@ static void Project(Gambit::Vector<double> &x, const Gambit::Array<int> &lengths
   }
 }
 
-bool EFLiapFunc::Gradient(const Gambit::Vector<double> &x,
-			  Gambit::Vector<double> &grad) const
+bool AgentLyapunovFunction::Gradient(const Vector<double> &x,
+				     Vector<double> &grad) const
 {
   const double DELTA = .00001;
-
-  ((Gambit::Vector<double> &) _p).operator=(x);
+  static_cast<Vector<double> &>(m_profile).operator=(x);
   for (int i = 1; i <= x.Length(); i++) {
-    _p[i] += DELTA;
-    double value = _p.GetLiapValue();
-    _p[i] -= 2.0 * DELTA;
-    value -= _p.GetLiapValue();
-    _p[i] += DELTA;
+    m_profile[i] += DELTA;
+    double value = m_profile.GetLiapValue();
+    m_profile[i] -= 2.0 * DELTA;
+    value -= m_profile.GetLiapValue();
+    m_profile[i] += DELTA;
     grad[i] = value / (2.0 * DELTA);
   }
-
-  Project(grad, _p.GetGame()->NumInfosets());
-
+  Project(grad, m_game->NumInfosets());
   return true;
 }
 
 void PrintProfile(std::ostream &p_stream,
 		  const std::string &p_label,
-		  const Gambit::MixedBehavProfile<double> &p_profile)
+		  const MixedBehavProfile<double> &p_profile)
 {
   p_stream << p_label;
   for (int i = 1; i <= p_profile.Length(); i++) {
@@ -130,7 +119,7 @@ void PrintProfile(std::ostream &p_stream,
 }
 
 bool ReadProfile(std::istream &p_stream,
-		 Gambit::MixedBehavProfile<double> &p_profile)
+		 MixedBehavProfile<double> &p_profile)
 {
   for (int i = 1; i <= p_profile.Length(); i++) {
     if (p_stream.eof() || p_stream.bad()) {
@@ -150,15 +139,15 @@ bool ReadProfile(std::istream &p_stream,
   return true;
 }
 
-void SolveExtensive(const Gambit::Game &p_game)
+void SolveExtensive(const Game &p_game)
 {
-  Gambit::List<Gambit::MixedBehavProfile<double> > starts;
+  List<MixedBehavProfile<double> > starts;
 
   if (startFile != "") {
     std::ifstream startPoints(startFile.c_str());
 
     while (!startPoints.eof() && !startPoints.bad()) {
-      Gambit::MixedBehavProfile<double> start(p_game);
+      MixedBehavProfile<double> start(p_game);
       if (ReadProfile(startPoints, start)) {
 	starts.Append(start);
       }
@@ -167,7 +156,7 @@ void SolveExtensive(const Gambit::Game &p_game)
   else {
     // Generate the desired number of points randomly
     for (int i = 1; i <= m_numTries; i++) {
-      Gambit::MixedBehavProfile<double> start(p_game);
+      MixedBehavProfile<double> start(p_game);
       start.Randomize();
       starts.Append(start);
     }
@@ -176,28 +165,28 @@ void SolveExtensive(const Gambit::Game &p_game)
   static const double ALPHA = .00000001;
 
   for (int i = 1; i <= starts.Length(); i++) {
-    Gambit::MixedBehavProfile<double> p(starts[i]);
+    MixedBehavProfile<double> p(starts[i]);
 
     if (verbose) {
       PrintProfile(std::cout, "start", p);
     }
 
-    EFLiapFunc F(p_game, p);
+    AgentLyapunovFunction F(p);
 
     // if starting vector not interior, perturb it towards centroid
     int kk = 1;
     for (; kk <= p.Length() && p[kk] > ALPHA; kk++);
     if (kk <= p.Length()) {
-      Gambit::MixedBehavProfile<double> c(p_game);
+      MixedBehavProfile<double> c(p_game);
       for (int k = 1; k <= p.Length(); k++) {
 	p[k] = c[k]*ALPHA + p[k]*(1.0-ALPHA);
       }
     }
 
-    Gambit::Matrix<double> xi(p.Length(), p.Length());
+    Matrix<double> xi(p.Length(), p.Length());
   
     ConjugatePRMinimizer minimizer(p.Length());
-    Gambit::Vector<double> gradient(p.Length()), dx(p.Length());
+    Vector<double> gradient(p.Length()), dx(p.Length());
     double fval;
     minimizer.Set(F, p, fval, gradient, .01, .0001);
 

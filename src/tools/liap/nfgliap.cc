@@ -28,6 +28,8 @@
 #include "libgambit/libgambit.h"
 #include "funcmin.h"
 
+using namespace Gambit;
+
 extern int m_stopAfter;
 extern int m_numTries;
 extern int m_maxits1;
@@ -43,45 +45,34 @@ extern bool verbose;
 //                        class NFLiapFunc
 //---------------------------------------------------------------------
 
-class NFLiapFunc : public Function  {
+class StrategicLyapunovFunction : public Function  {
 private:
-  mutable long _nevals;
-  Gambit::Game _nfg;
-  mutable Gambit::MixedStrategyProfile<double> _p;
+  Game m_game;
+  mutable MixedStrategyProfile<double> m_profile;
 
-  double Value(const Gambit::Vector<double> &) const;
-  bool Gradient(const Gambit::Vector<double> &, Gambit::Vector<double> &) const;
+  double Value(const Vector<double> &) const;
+  bool Gradient(const Vector<double> &, Vector<double> &) const;
 
-  double LiapDerivValue(int, int, const Gambit::MixedStrategyProfile<double> &) const;
+  double LiapDerivValue(int, int, const MixedStrategyProfile<double> &) const;
     
-
 public:
-  NFLiapFunc(const Gambit::Game &, const Gambit::MixedStrategyProfile<double> &);
-  virtual ~NFLiapFunc();
-    
-  long NumEvals(void) const  { return _nevals; }
+  StrategicLyapunovFunction(const MixedStrategyProfile<double> &);
+  virtual ~StrategicLyapunovFunction() { }
 };
 
-NFLiapFunc::NFLiapFunc(const Gambit::Game &N,
-		       const Gambit::MixedStrategyProfile<double> &start)
-  : _nevals(0L), _nfg(N), _p(start)
+StrategicLyapunovFunction::StrategicLyapunovFunction(const MixedStrategyProfile<double> &p_start)
+  : m_game(p_start.GetGame()), m_profile(p_start)
 { }
 
-NFLiapFunc::~NFLiapFunc()
-{ }
-
-double NFLiapFunc::LiapDerivValue(int i1, int j1,
-				  const Gambit::MixedStrategyProfile<double> &p) const
+double StrategicLyapunovFunction::LiapDerivValue(int i1, int j1,
+						 const MixedStrategyProfile<double> &p) const
 {
-  int i, j;
-  double x, x1, psum;
-  
-  x = 0.0;
-  for (i = 1; i <= _nfg->NumPlayers(); i++)  {
-    psum = 0.0;
-    for (j = 1; j <= p.GetSupport().NumStrategies(i); j++)  {
+  double x = 0.0;
+  for (int i = 1; i <= m_game->NumPlayers(); i++)  {
+    double psum = 0.0;
+    for (int j = 1; j <= p.GetSupport().NumStrategies(i); j++)  {
       psum += p[p.GetSupport().GetStrategy(i,j)];
-      x1 = p.GetPayoff(p.GetSupport().GetStrategy(i, j)) - p.GetPayoff(i);
+      double x1 = p.GetPayoff(p.GetSupport().GetStrategy(i, j)) - p.GetPayoff(i);
       if (i1 == i) {
 	if (x1 > 0.0)
 	  x -= x1 * p.GetPayoffDeriv(i, p.GetSupport().GetStrategy(i1, j1));
@@ -109,7 +100,7 @@ double NFLiapFunc::LiapDerivValue(int i1, int j1,
 // vector perpendicular to the plane, then subtracting to compute the
 // component parallel to the plane.)
 //
-static void Project(Gambit::Vector<double> &x, const Gambit::Array<int> &lengths)
+static void Project(Vector<double> &x, const Array<int> &lengths)
 {
   int index = 1;
   for (int part = 1; part <= lengths.Length(); part++)  {
@@ -126,32 +117,27 @@ static void Project(Gambit::Vector<double> &x, const Gambit::Array<int> &lengths
   }
 }
 
-bool NFLiapFunc::Gradient(const Gambit::Vector<double> &v, Gambit::Vector<double> &d) const
+bool StrategicLyapunovFunction::Gradient(const Vector<double> &v, Vector<double> &d) const
 {
-  ((Gambit::Vector<double> &) _p).operator=(v);
-  int i1, j1, ii;
-  
-  for (i1 = 1, ii = 1; i1 <= _nfg->NumPlayers(); i1++) {
-    for (j1 = 1; j1 <= _p.GetSupport().NumStrategies(i1); j1++) {
-      d[ii++] = LiapDerivValue(i1, j1, _p);
+  static_cast<Vector<double> &>(m_profile).operator=(v);
+  for (int pl = 1, ii = 1; pl <= m_game->NumPlayers(); pl++) {
+    for (int st = 1; st <= m_game->Players()[pl]->Strategies().size(); st++) {
+      d[ii++] = LiapDerivValue(pl, st, m_profile);
     }
   }
-
-  Project(d, _p.GetSupport().NumStrategies());
+  Project(d, m_game->NumStrategies());
   return true;
 }
   
-double NFLiapFunc::Value(const Gambit::Vector<double> &v) const
+double StrategicLyapunovFunction::Value(const Vector<double> &v) const
 {
-  _nevals++;
-
-  ((Gambit::Vector<double> &) _p).operator=(v);
-  return _p.GetLiapValue();
+  static_cast<Vector<double> &>(m_profile).operator=(v);
+  return m_profile.GetLiapValue();
 }
 
 void PrintProfile(std::ostream &p_stream,
 		  const std::string &p_label,
-		  const Gambit::MixedStrategyProfile<double> &p_profile)
+		  const MixedStrategyProfile<double> &p_profile)
 {
   p_stream << p_label;
   for (int i = 1; i <= p_profile.MixedProfileLength(); i++) {
@@ -163,7 +149,7 @@ void PrintProfile(std::ostream &p_stream,
 }
 
 bool ReadProfile(std::istream &p_stream,
-		 Gambit::MixedStrategyProfile<double> &p_profile)
+		 MixedStrategyProfile<double> &p_profile)
 {
   for (int i = 1; i <= p_profile.MixedProfileLength(); i++) {
     if (p_stream.eof() || p_stream.bad()) {
@@ -185,15 +171,15 @@ bool ReadProfile(std::istream &p_stream,
 
 extern std::string startFile;
 
-void SolveStrategic(const Gambit::Game &p_game)
+void SolveStrategic(const Game &p_game)
 {
-  Gambit::List<Gambit::MixedStrategyProfile<double> > starts;
+  List<MixedStrategyProfile<double> > starts;
 
   if (startFile != "") {
     std::ifstream startPoints(startFile.c_str());
 
     while (!startPoints.eof() && !startPoints.bad()) {
-      Gambit::MixedStrategyProfile<double> start(p_game->NewMixedStrategyProfile(0.0));
+      MixedStrategyProfile<double> start(p_game->NewMixedStrategyProfile(0.0));
       if (ReadProfile(startPoints, start)) {
 	starts.Append(start);
       }
@@ -202,7 +188,7 @@ void SolveStrategic(const Gambit::Game &p_game)
   else {
     // Generate the desired number of points randomly
     for (int i = 1; i <= m_numTries; i++) {
-      Gambit::MixedStrategyProfile<double> start(p_game->NewMixedStrategyProfile(0.0));
+      MixedStrategyProfile<double> start(p_game->NewMixedStrategyProfile(0.0));
       start.Randomize();
       starts.Append(start);
     }
@@ -211,32 +197,32 @@ void SolveStrategic(const Gambit::Game &p_game)
   static const double ALPHA = .00000001;
 
   for (int i = 1; i <= starts.Length(); i++) {
-    Gambit::MixedStrategyProfile<double> p(starts[i]);
+    MixedStrategyProfile<double> p(starts[i]);
 
     if (verbose) {
       PrintProfile(std::cout, "start", p);
     }
 
-    NFLiapFunc F(p.GetGame(), p);
+    StrategicLyapunovFunction F(p);
 
     // if starting vector not interior, perturb it towards centroid
     int kk;
     for (kk = 1; kk <= p.MixedProfileLength() && p[kk] > ALPHA; kk++);
     if (kk <= p.MixedProfileLength()) {
-      Gambit::MixedStrategyProfile<double> centroid(p.GetSupport().NewMixedStrategyProfile<double>());
+      MixedStrategyProfile<double> centroid(p.GetSupport().NewMixedStrategyProfile<double>());
       for (int k = 1; k <= p.MixedProfileLength(); k++) {
 	p[k] = centroid[k] * ALPHA + p[k] * (1.0-ALPHA);
       }
     }
 
     ConjugatePRMinimizer minimizer(p.MixedProfileLength());
-    Gambit::Vector<double> gradient(p.MixedProfileLength()), dx(p.MixedProfileLength());
+    Vector<double> gradient(p.MixedProfileLength()), dx(p.MixedProfileLength());
     double fval;
-    minimizer.Set(F, (const Gambit::Vector<double> &) p,
+    minimizer.Set(F, (const Vector<double> &) p,
 		  fval, gradient, .01, .0001);
 
     for (int iter = 1; iter <= m_maxitsN; iter++) {
-      if (!minimizer.Iterate(F, (Gambit::Vector<double> &) p, 
+      if (!minimizer.Iterate(F, (Vector<double> &) p, 
 			     fval, gradient, dx)) {
 	break;
       }
