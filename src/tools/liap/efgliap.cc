@@ -39,7 +39,7 @@ extern bool useRandom;
 extern int g_numDecimals;
 extern bool verbose;
 
-class EFLiapFunc : public gC1Function<double>  {
+class EFLiapFunc : public Function  {
 private:
   mutable long _nevals;
   Gambit::Game _efg;
@@ -196,28 +196,25 @@ void SolveExtensive(const Gambit::Game &p_game)
 
     Gambit::Matrix<double> xi(p.Length(), p.Length());
   
-    gConjugatePR minimizer(p.Length());
+    ConjugatePRMinimizer minimizer(p.Length());
     Gambit::Vector<double> gradient(p.Length()), dx(p.Length());
     double fval;
     minimizer.Set(F, p, fval, gradient, .01, .0001);
 
-    try {
-      for (int iter = 1; iter <= m_maxitsN; iter++) {
-	if (!minimizer.Iterate(F, p, fval, gradient, dx)) {
-	  break;
-	}
-
-	if (sqrt(gradient.NormSquared()) < .001) {
-	  PrintProfile(std::cout, "NE", p);
-	  break;
-	}
+    for (int iter = 1; iter <= m_maxitsN; iter++) {
+      if (!minimizer.Iterate(F, p, fval, gradient, dx)) {
+	break;
       }
 
-      if (verbose && sqrt(gradient.NormSquared()) >= .001) {
-	PrintProfile(std::cout, "end", p);
+      if (sqrt(gradient.NormSquared()) < .001) {
+	PrintProfile(std::cout, "NE", p);
+	break;
       }
     }
-    catch (gFuncMinException &) { }
+
+    if (verbose && sqrt(gradient.NormSquared()) >= .001) {
+      PrintProfile(std::cout, "end", p);
+    }
   }
 }
 

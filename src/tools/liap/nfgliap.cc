@@ -43,7 +43,7 @@ extern bool verbose;
 //                        class NFLiapFunc
 //---------------------------------------------------------------------
 
-class NFLiapFunc : public gC1Function<double>  {
+class NFLiapFunc : public Function  {
 private:
   mutable long _nevals;
   Gambit::Game _nfg;
@@ -229,30 +229,27 @@ void SolveStrategic(const Gambit::Game &p_game)
       }
     }
 
-    gConjugatePR minimizer(p.MixedProfileLength());
+    ConjugatePRMinimizer minimizer(p.MixedProfileLength());
     Gambit::Vector<double> gradient(p.MixedProfileLength()), dx(p.MixedProfileLength());
     double fval;
     minimizer.Set(F, (const Gambit::Vector<double> &) p,
 		  fval, gradient, .01, .0001);
 
-    try {
-      for (int iter = 1; iter <= m_maxitsN; iter++) {
-	if (!minimizer.Iterate(F, (Gambit::Vector<double> &) p, 
-			       fval, gradient, dx)) {
-	  break;
-	}
-
-	if (sqrt(gradient.NormSquared()) < .001) {
-	  PrintProfile(std::cout, "NE", p);
-	  break;
-	}
+    for (int iter = 1; iter <= m_maxitsN; iter++) {
+      if (!minimizer.Iterate(F, (Gambit::Vector<double> &) p, 
+			     fval, gradient, dx)) {
+	break;
       }
 
-      if (verbose && sqrt(gradient.NormSquared()) >= .001) {
-	PrintProfile(std::cout, "end", p);
+      if (sqrt(gradient.NormSquared()) < .001) {
+	PrintProfile(std::cout, "NE", p);
+	break;
       }
     }
-    catch (gFuncMinException &) { }
+
+    if (verbose && sqrt(gradient.NormSquared()) >= .001) {
+      PrintProfile(std::cout, "end", p);
+    }
   }
 }
 
